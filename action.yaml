@@ -1,0 +1,39 @@
+inputs:
+  CLUSTER:
+    required: true
+  NAMESPACE:
+    required: true
+  # all cluster variables, finishing with _$ENVNAME
+  # This action will select cluster based on branch/pr
+  SECRETS_JSON:
+    required: true
+
+runs:
+  using: "ubuntu-latest"
+  steps:
+    - shell: bash
+      id: main
+      run: |
+        set -e
+
+        function get_input() {
+          local key=$1
+          jq -r ".$key // empty" <<EOF
+          ${{ inputs.SECRETS_JSON }}
+        EOF
+        }
+
+        CLUSTER=${{ inputs.CLUSTER }}
+        CLUSTER_UC=$(echo ${{ inputs.CLUSTER }} | tr a-z A-Z)
+        NAMESPACE=${{ inputs.NAMESPACE }}
+        KUBE_CLUSTER_URL="$(get_input KUBE_CLUSTER_URL_${CLUSTER_UC})"
+        KUBE_CLUSTER_TOKEN="$(get_input KUBE_CLUSTER_TOKEN_${CLUSTER_UC})"
+        KUBE_CLUSTER_CACERT_BASE64="$(get_input KUBE_CLUSTER_CACERT_BASE64_${CLUSTER_UC})"
+
+        # create kubeconfig file
+        kubectl config set-cluster $CLUSTER --server=$KUBE_CLUSTER_URL --certificate-authority=<(echo $KUBE_CLUSTER_CACERT_BASE64 | base64 -d) --embed-certs
+        kubectl config set-credentials $NAMESPACE --token=$KUBE_CLUSTER_TOKEN
+        kubectl config set-context $CLUSTER --user=$NAMESPACE --cluster=$CLUSTER --namespace=$NAMESPACE
+        kubectl config use-context $CLUSTER
+        # test access
+        kubectl get pods
